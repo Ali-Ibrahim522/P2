@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 #include <stdlib.h>
 
 typedef struct {
@@ -17,19 +18,72 @@ typedef struct {
     int **grid;
     pthread_t *ids;
 } params;
-
+bool glbValid = true;
+bool glbComplete = true;
 pthread_t *ids;
 
 
 void *checkCol(void *args) {
-
+  params* colArgs = (params *) args;
+  bool seen[colArgs->psize + 1];
+  memset(seen, 0, (colArgs->psize + 1) * sizeof(bool));
+  for (int i = 1; i <= colArgs->psize; i++) {
+    if (colArgs->grid[i][colArgs->col] == 0) {
+      glbComplete = false;
+      continue;
+    }
+    if (seen[colArgs->grid[i][colArgs->col]]) {
+      glbValid = false;
+      return;
+    }
+    seen[colArgs->grid[i][colArgs->col]] = true;
+  }
 }
 
 void *checkRow(void *args) {
-
+  params* rowArgs = (params *) args;
+  bool seen[rowArgs->psize + 1];
+  memset(seen, 0, (rowArgs->psize + 1) * sizeof(bool));
+  for (int i = 1; i <= rowArgs->psize; i++) {
+    if (rowArgs->grid[rowArgs->row][i] == 0) {
+      glbComplete = false;
+      continue;
+    }
+    if (seen[rowArgs->grid[rowArgs->row][i]]) {
+      glbValid = false;
+      return;
+    }
+    seen[rowArgs->grid[rowArgs->row][i]] = true;
+  }
 }
 
 void *checkBox(void *args) {
+  params* boxArgs = (params *) args;
+  bool seen[boxArgs->psize + 1];
+  memset(seen, 0, (boxArgs->psize + 1) * sizeof(bool));
+  int boxRow = boxArgs->row;
+  int boxCol = boxArgs->col;
+  for (int i = 1; i <= boxArgs->psize; i++) {
+    if (boxArgs->grid[boxRow][boxCol] == 0) {
+      glbComplete = false;
+      continue;
+    }
+    if (seen[boxArgs->grid[boxRow][boxCol]]) {
+      glbValid = false;
+      return;
+    }
+    seen[boxArgs->grid[boxRow][boxCol]] = true;
+
+    if (boxCol == boxArgs->col + (sqrt(boxArgs->psize) - 1)) {
+      boxCol = boxArgs->col;
+      boxRow++;
+    } else {
+      boxCol++;
+    }
+  }
+}
+
+void *finishPuzzle() {
 
 }
 
@@ -41,20 +95,14 @@ void *checkBox(void *args) {
 // If complete, a puzzle is valid if all rows/columns/boxes have numbers from 1
 // to psize For incomplete puzzles, we cannot say anything about validity
 void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
-  // YOUR CODE GOES HERE and in HELPER FUNCTIONS
-  //threads for columns: n
-  //thread for rows: n
-  //threads for boxes: n 
   pthread_t ids[psize * 3];
   int currId = 0;
-  int boxRow = 0;
+  int boxRow = 1;
   int boxCol = 1;
 
   for (int i = 1; i <= psize; i++) {
     //row
     //data setting
-    printf("row[%d]...", i);
-    fflush(stdout);
     params *data = (params *) malloc(sizeof(params));
     data->row = i;
     data->col = 1;
@@ -65,8 +113,6 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
 
     //col
     //data setting
-    printf("col[%d]...", i);
-    fflush(stdout);
     data = (params *) malloc(sizeof(params));
     data->row = 1;
     data->col = i;
@@ -77,29 +123,30 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
 
     //box
     //data setting
-    printf("box[%d]...\n", i);
-    fflush(stdout);
     data = (params *) malloc(sizeof(params));
     data->row = boxRow;
     data->col = boxCol;
     data->psize = psize;
     data->grid = grid;
     //thread creation
-    pthread_create(&ids[currId++], NULL, checkCol, (void *)data);
-    if (boxCol == (sqrt(psize) * 2) + 1) {
-      boxCol = 0;
-      boxRow + 3;
+    pthread_create(&ids[currId++], NULL, checkBox, (void *)data);
+    if (boxCol == psize - (sqrt(psize) - 1)) {
+      boxCol = 1;
+      boxRow += sqrt(psize);
     } else {
-      boxCol + 3;
+      boxCol += sqrt(psize);
     }
   }
-  for (int i = 0; i < (psize * 3); i++) {
-    printf("[%d]", ids[i]);
-    pthread_join(ids[i], NULL);
-  }
-  printf("\n");
-  *valid = true;
-  *complete = true;
+  // for (int i = 0; i < (psize * 3); i++) {
+  //   printf("[%ld]", ids[i]);
+  //   pthread_join(ids[i], NULL);
+  // }
+  // printf("\n");
+  *valid = glbValid;
+  *complete = glbComplete;
+  if (!complete) finishPuzzle();
+
+  //if not complete, run backtracing complete method
 }
 
 // takes filename and pointer to grid[][]
