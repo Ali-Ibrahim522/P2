@@ -1,10 +1,37 @@
 // Sudoku puzzle verifier and solver
-
+// notes:
+// - join: waits for pthread to finish
+// - kill: kills (assuming means stops) a thread, must be done before join
+// - 
 #include <assert.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
+
+typedef struct {
+    int row;
+    int col;
+    int psize;
+    int **grid;
+    pthread_t *ids;
+} params;
+
+pthread_t *ids;
+
+
+void *checkCol(void *args) {
+
+}
+
+void *checkRow(void *args) {
+
+}
+
+void *checkBox(void *args) {
+
+}
 
 // takes puzzle size and grid[][] representing sudoku puzzle
 // and tow booleans to be assigned: complete and valid.
@@ -15,6 +42,62 @@
 // to psize For incomplete puzzles, we cannot say anything about validity
 void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   // YOUR CODE GOES HERE and in HELPER FUNCTIONS
+  //threads for columns: n
+  //thread for rows: n
+  //threads for boxes: n 
+  pthread_t ids[psize * 3];
+  int currId = 0;
+  int boxRow = 0;
+  int boxCol = 1;
+
+  for (int i = 1; i <= psize; i++) {
+    //row
+    //data setting
+    printf("row[%d]...", i);
+    fflush(stdout);
+    params *data = (params *) malloc(sizeof(params));
+    data->row = i;
+    data->col = 1;
+    data->psize = psize;
+    data->grid = grid;
+    //thread creation
+    pthread_create(&ids[currId++], NULL, checkRow, (void *)data);
+
+    //col
+    //data setting
+    printf("col[%d]...", i);
+    fflush(stdout);
+    data = (params *) malloc(sizeof(params));
+    data->row = 1;
+    data->col = i;
+    data->psize = psize;
+    data->grid = grid;
+    //thread creation
+    pthread_create(&ids[currId++], NULL, checkCol, (void *)data);
+
+    //box
+    //data setting
+    printf("box[%d]...\n", i);
+    fflush(stdout);
+    data = (params *) malloc(sizeof(params));
+    data->row = boxRow;
+    data->col = boxCol;
+    data->psize = psize;
+    data->grid = grid;
+    //thread creation
+    pthread_create(&ids[currId++], NULL, checkCol, (void *)data);
+    if (boxCol == (sqrt(psize) * 2) + 1) {
+      boxCol = 0;
+      boxRow + 3;
+    } else {
+      boxCol + 3;
+    }
+  }
+  for (int i = 0; i < (psize * 3); i++) {
+    printf("[%d]", ids[i]);
+    pthread_join(ids[i], NULL);
+  }
+  printf("\n");
   *valid = true;
   *complete = true;
 }
