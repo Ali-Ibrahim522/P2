@@ -93,6 +93,7 @@ void *checkBox(void *args) {
       boxCol++;
     }
   }
+  free(args);
   return 0;
 }
 
@@ -153,7 +154,7 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   data->grid = grid;
   pthread_create(&ids[currId++], NULL, checkRow, (void *)data);
   pthread_create(&ids[currId++], NULL, checkCol, (void *)data);
-
+  free(data);
   for (int i = 1; i <= psize; i++) {
     //box
     //data setting
