@@ -14,10 +14,13 @@
 typedef struct {
     int row;
     int col;
+    int boxRow;
+    int boxCol;
     int psize;
     int **grid;
-    pthread_t *ids;
+    bool *seen;
 } params;
+
 bool glbValid = true;
 bool glbComplete = true;
 pthread_t *ids;
@@ -26,35 +29,43 @@ pthread_t *ids;
 void *checkCol(void *args) {
   params* colArgs = (params *) args;
   bool seen[colArgs->psize + 1];
-  memset(seen, 0, (colArgs->psize + 1) * sizeof(bool));
   for (int i = 1; i <= colArgs->psize; i++) {
-    if (colArgs->grid[i][colArgs->col] == 0) {
-      glbComplete = false;
-      continue;
+    memset(seen, 0, (colArgs->psize + 1) * sizeof(bool));
+    for (int j = 1; j <= colArgs->psize; j++) {
+      if (!glbComplete || !glbValid ) return 0;
+      if (colArgs->grid[j][i] == 0) {
+        glbComplete = false;
+        continue;
+      }
+      if (seen[colArgs->grid[j][i]]) {
+        glbValid = false;
+        return 0;
+      }
+      seen[colArgs->grid[j][i]] = true;
     }
-    if (seen[colArgs->grid[i][colArgs->col]]) {
-      glbValid = false;
-      return;
-    }
-    seen[colArgs->grid[i][colArgs->col]] = true;
   }
+  return 0;
 }
 
 void *checkRow(void *args) {
   params* rowArgs = (params *) args;
   bool seen[rowArgs->psize + 1];
-  memset(seen, 0, (rowArgs->psize + 1) * sizeof(bool));
   for (int i = 1; i <= rowArgs->psize; i++) {
-    if (rowArgs->grid[rowArgs->row][i] == 0) {
-      glbComplete = false;
-      continue;
+    memset(seen, 0, (rowArgs->psize + 1) * sizeof(bool));
+    for (int j = 1; j <= rowArgs->psize; j++) {
+      if (!glbComplete || !glbValid ) return 0;
+      if (rowArgs->grid[i][j] == 0) {
+        glbComplete = false;
+        continue;
+      }
+      if (seen[rowArgs->grid[i][j]]) {
+        glbValid = false;
+        return 0;
+      }
+      seen[rowArgs->grid[i][j]] = true;
     }
-    if (seen[rowArgs->grid[rowArgs->row][i]]) {
-      glbValid = false;
-      return;
-    }
-    seen[rowArgs->grid[rowArgs->row][i]] = true;
   }
+  return 0;
 }
 
 void *checkBox(void *args) {
@@ -64,13 +75,14 @@ void *checkBox(void *args) {
   int boxRow = boxArgs->row;
   int boxCol = boxArgs->col;
   for (int i = 1; i <= boxArgs->psize; i++) {
+    if (!glbComplete || !glbValid ) return 0;
     if (boxArgs->grid[boxRow][boxCol] == 0) {
       glbComplete = false;
       continue;
     }
     if (seen[boxArgs->grid[boxRow][boxCol]]) {
       glbValid = false;
-      return;
+      return 0;
     }
     seen[boxArgs->grid[boxRow][boxCol]] = true;
 
@@ -81,10 +93,46 @@ void *checkBox(void *args) {
       boxCol++;
     }
   }
+  return 0;
 }
 
-void *finishPuzzle() {
+void *slvChkRow(void *args) {
+  params* chkRow = (params *) args;
+  for (int i = 1; i <= chkRow->psize; i++) {
+    if (chkRow->grid[chkRow->row][i] != 0) {
+      chkRow->seen[chkRow->grid[chkRow->row][i]] = true;
+    }
+  }
+  return 0;
+}
 
+void *slvChkCol(void *args) {
+  params* chkCol = (params *) args;
+  for (int i = 1; i <= chkCol->psize; i++) {
+    if (chkCol->grid[i][chkCol->col] != 0) {
+      chkCol->seen[chkCol->grid[i][chkCol->col]] = true;
+    }
+  }
+  return 0;
+}
+
+void *slvChkBox(void *args) {
+  params* chkBox = (params *) args;
+  int boxRow = chkBox->boxRow;
+  int boxCol = chkBox->boxCol;
+  for (int i = 1; i <= chkBox->psize; i++) {
+    if (chkBox->grid[boxRow][boxCol] != 0) {
+      chkBox->seen[chkBox->grid[boxRow][boxCol]] = true;
+    }
+
+    if (boxCol == chkBox->boxCol + (sqrt(chkBox->psize) - 1)) {
+      boxCol = chkBox->boxCol;
+      boxRow++;
+    } else {
+      boxCol++;
+    }
+  }
+  return 0;
 }
 
 // takes puzzle size and grid[][] representing sudoku puzzle
@@ -95,32 +143,18 @@ void *finishPuzzle() {
 // If complete, a puzzle is valid if all rows/columns/boxes have numbers from 1
 // to psize For incomplete puzzles, we cannot say anything about validity
 void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
-  pthread_t ids[psize * 3];
+  pthread_t ids[psize + 2];
   int currId = 0;
   int boxRow = 1;
   int boxCol = 1;
 
+  params *data = (params *) malloc(sizeof(params));
+  data->psize = psize;
+  data->grid = grid;
+  pthread_create(&ids[currId++], NULL, checkRow, (void *)data);
+  pthread_create(&ids[currId++], NULL, checkCol, (void *)data);
+
   for (int i = 1; i <= psize; i++) {
-    //row
-    //data setting
-    params *data = (params *) malloc(sizeof(params));
-    data->row = i;
-    data->col = 1;
-    data->psize = psize;
-    data->grid = grid;
-    //thread creation
-    pthread_create(&ids[currId++], NULL, checkRow, (void *)data);
-
-    //col
-    //data setting
-    data = (params *) malloc(sizeof(params));
-    data->row = 1;
-    data->col = i;
-    data->psize = psize;
-    data->grid = grid;
-    //thread creation
-    pthread_create(&ids[currId++], NULL, checkCol, (void *)data);
-
     //box
     //data setting
     data = (params *) malloc(sizeof(params));
@@ -137,16 +171,67 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
       boxCol += sqrt(psize);
     }
   }
-  // for (int i = 0; i < (psize * 3); i++) {
-  //   printf("[%ld]", ids[i]);
-  //   pthread_join(ids[i], NULL);
-  // }
-  // printf("\n");
+  for (int i = 0; i < (psize + 2); i++) {
+    pthread_join(ids[i], NULL);
+  }
   *valid = glbValid;
   *complete = glbComplete;
-  if (!complete) finishPuzzle();
+  if (glbComplete) return;
+  bool *seen;
+  bool seenArr[psize + 1];
+  seen = seenArr;
+  bool unSolved = true;
+  while (unSolved) {
+    fflush(stdout);
+    int boxRow = 1;
+    int boxCol = 1;
+    unSolved = false;
+    for (int i = 1; i <= psize; i++) {
+      for (int j = 1; j <= psize; j++) {
+        if (j != 1 && (j - 1)  % (int)sqrt(psize) == 0) {
+          boxCol += sqrt(psize);  
+        }
+        if (grid[i][j] == 0) {
+          memset(seen, 0, (psize + 1) * sizeof(bool));
+          pthread_t rowId, colId, boxId;
+          data = (params *) malloc(sizeof(params));
+          data->row = i;
+          data->col = j;
+          data->psize = psize;
+          data->grid = grid;
+          data->seen = seen;
+          data->boxRow = boxRow;
+          data->boxCol = boxCol;
+          pthread_create(&rowId, NULL, slvChkRow, (void *)data);
+          pthread_create(&colId, NULL, slvChkCol, (void *)data);
+          pthread_create(&boxId, NULL, slvChkBox, (void *)data);
+          pthread_join(rowId, NULL);
+          pthread_join(colId, NULL);
+          pthread_join(boxId, NULL);
+          int num = -1;
+          for (int k = 1; k <= psize; k++) {
+            if (!seen[k]) {
+              if (num == -1) {
+                num = k;
+              } else {
+                unSolved = true;
+                continue;
+              }
+            }
+          }
+          grid[i][j] = num;
+          free(data);
+        }
+      }
+      if (i != 1 && (i - 1)  % (int)sqrt(psize) == 0) {
+          boxRow += sqrt(psize);
+          boxCol = 1;
+      }
+      
+    }
+  }
 
-  //if not complete, run backtracing complete method
+
 }
 
 // takes filename and pointer to grid[][]
