@@ -1,8 +1,30 @@
-// Sudoku puzzle verifier and solver
-// notes:
-// - join: waits for pthread to finish
-// - kill: kills (assuming means stops) a thread, must be done before join
-// - 
+/*
+created by Ali Ibrahim
+
+General notes and assumptions...
+  - program validates whether a puzzle of N x N size is valid and/or complete
+
+  - if incomplete, the program will attempt to complete given this tautology...
+    - during the solving process, at least one empty spot of the puzzle
+      can be filled by looking at that puzzle spot's column, row, and box.
+    - Every complete iteration through each spot of the puzzle, will result
+      in at least one spot of the puzzle being filled in.
+    
+  - a complete iteration resulting in no spots being filled in is a invalid
+    and incomplete puzzle given the solving tautology.
+  
+To run the program...
+  - compile: gcc -Wall -Wextra -pthread -lm -std=c99 sudoku.c -o sudoku
+  - run (verify): 
+    - ./sudoku puzzle2-invalid.txt
+    - ./sudoku puzzle2-valid.txt
+    - ./sudoku puzzle9-valid.txt
+  - run (complete): 
+    - ./sudoku puzzle2-fill-valid.txt
+    - completing puzzles, tested with hard puzzle listed at the end of the assignment page
+    - accounts for both completing puzzles and completing difficult puzzles extra credit
+*/
+
 #include <assert.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -11,6 +33,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+// struct defining the params for all methods used in threads
 typedef struct {
     int row;
     int col;
@@ -21,11 +44,13 @@ typedef struct {
     bool *seen;
 } params;
 
+// bool var keeping track if puzzle is valid or not during thread runs
 bool glbValid = true;
+// bool var keeping track if puzzle is complete or not during thread runs
 bool glbComplete = true;
 pthread_t *ids;
-
-
+ 
+// checks if the given column makes the puzzle invalid or incomplete
 void *checkCol(void *args) {
   params* colArgs = (params *) args;
   bool seen[colArgs->psize + 1];
@@ -47,6 +72,7 @@ void *checkCol(void *args) {
   return 0;
 }
 
+// checks if the given row makes the puzzle invalid or incomplete
 void *checkRow(void *args) {
   params* rowArgs = (params *) args;
   bool seen[rowArgs->psize + 1];
@@ -68,6 +94,7 @@ void *checkRow(void *args) {
   return 0;
 }
 
+// checks if the given box makes the puzzle invalid or incomplete
 void *checkBox(void *args) {
   params* boxArgs = (params *) args;
   bool seen[boxArgs->psize + 1];
@@ -97,6 +124,7 @@ void *checkBox(void *args) {
   return 0;
 }
 
+// finds and records all values found in the row of given puzzle spot
 void *slvChkRow(void *args) {
   params* chkRow = (params *) args;
   for (int i = 1; i <= chkRow->psize; i++) {
@@ -107,6 +135,7 @@ void *slvChkRow(void *args) {
   return 0;
 }
 
+// finds and records all values found in the column of given puzzle spot
 void *slvChkCol(void *args) {
   params* chkCol = (params *) args;
   for (int i = 1; i <= chkCol->psize; i++) {
@@ -117,6 +146,7 @@ void *slvChkCol(void *args) {
   return 0;
 }
 
+// finds and records all values found in the box of given puzzle spot
 void *slvChkBox(void *args) {
   params* chkBox = (params *) args;
   int boxRow = chkBox->boxRow;
@@ -144,26 +174,32 @@ void *slvChkBox(void *args) {
 // If complete, a puzzle is valid if all rows/columns/boxes have numbers from 1
 // to psize For incomplete puzzles, we cannot say anything about validity
 void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
+  // all thread ids stored to later join
   pthread_t ids[psize + 2];
+  // current thread id index to use in thread creation
   int currId = 0;
+  // the top left square of the current puzzle square
   int boxRow = 1;
   int boxCol = 1;
 
+  // parameters to be sent to thread validation methods
   params *data = (params *) malloc(sizeof(params));
   data->psize = psize;
   data->grid = grid;
+  // validating all rows and cols
   pthread_create(&ids[currId++], NULL, checkRow, (void *)data);
   pthread_create(&ids[currId++], NULL, checkCol, (void *)data);
   free(data);
+  // iterating through each square pos in the puzzle
   for (int i = 1; i <= psize; i++) {
-    //box
-    //data setting
+    // box
+    // data setting
     data = (params *) malloc(sizeof(params));
     data->row = boxRow;
     data->col = boxCol;
     data->psize = psize;
     data->grid = grid;
-    //thread creation
+    // thread creation
     pthread_create(&ids[currId++], NULL, checkBox, (void *)data);
     if (boxCol == psize - (sqrt(psize) - 1)) {
       boxCol = 1;
@@ -172,28 +208,44 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
       boxCol += sqrt(psize);
     }
   }
+  // joining all threads from validation
   for (int i = 0; i < (psize + 2); i++) {
     pthread_join(ids[i], NULL);
   }
+  // setting the results of the validation
   *valid = glbValid;
   *complete = glbComplete;
+  // if not complete, try to solve
   if (glbComplete) return;
+  // if the puzzle can be solved (given the tautologies that must exist for every puzzle given to the program)
+  bool canSolve;
+  // array to store what values have been seen during solve checks
   bool *seen;
   bool seenArr[psize + 1];
   seen = seenArr;
+  // if the puzzle hasn't been solved yet
   bool unSolved = true;
   while (unSolved) {
-    fflush(stdout);
+    // current puzzle square to be checked
     int boxRow = 1;
     int boxCol = 1;
+    // assume puzzle is to be completed this iteration
     unSolved = false;
+    // assume puzzle cannot be solved unless a puzzle value is set this iteration
+    canSolve = false;
+    // iterate through whole puzzle
     for (int i = 1; i <= psize; i++) {
       for (int j = 1; j <= psize; j++) {
+        // adjust current square pos if needed
         if (j != 1 && (j - 1)  % (int)sqrt(psize) == 0) {
           boxCol += sqrt(psize);  
         }
+        // if puzzle spot needs to be filled
         if (grid[i][j] == 0) {
+          // clear seen array
           memset(seen, 0, (psize + 1) * sizeof(bool));
+          // create threads to check for possible values to insert into puzzle spot
+          // checking for possible values in the current row, col, and box of puzzle spot
           pthread_t rowId, colId, boxId;
           data = (params *) malloc(sizeof(params));
           data->row = i;
@@ -209,30 +261,46 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
           pthread_join(rowId, NULL);
           pthread_join(colId, NULL);
           pthread_join(boxId, NULL);
+          // searching through seen array for numbers that weren't found in same row, col, or box
           int num = -1;
           for (int k = 1; k <= psize; k++) {
+            // havent seen the current number
             if (!seen[k]) {
               if (num == -1) {
+                // haven't found a number to slot into puzzle spot
+                // assumes this number is the one to use
                 num = k;
               } else {
+                // another possible number has been found
                 unSolved = true;
                 continue;
               }
             }
           }
           grid[i][j] = num;
+          // because value was inserted into puzzle spot, assuming puzzle is solvable again
+          canSolve = true;
           free(data);
         }
       }
+      // adjusting box row value if needed
       if (i != 1 && (i - 1)  % (int)sqrt(psize) == 0) {
           boxRow += sqrt(psize);
           boxCol = 1;
       }
-      
+    }
+    if (!canSolve && unSolved) {
+      // no value was inserted this iteration, but the puzzle isn't solved yet
+      // meaning the puzzle doesn't follow given tautologies
+      // not solvable given current conditions, so valid and complete are false
+      *valid = false;
+      *complete = false;
+      return;
     }
   }
-
-
+  // if program reaches this point, puzzle has been solved and is valid
+  *valid = true;
+  *complete = true;
 }
 
 // takes filename and pointer to grid[][]
