@@ -120,7 +120,6 @@ void *checkBox(void *args) {
       boxCol++;
     }
   }
-  free(args);
   return 0;
 }
 
@@ -189,18 +188,18 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   // validating all rows and cols
   pthread_create(&ids[currId++], NULL, checkRow, (void *)data);
   pthread_create(&ids[currId++], NULL, checkCol, (void *)data);
-  free(data);
   // iterating through each square pos in the puzzle
+  params *boxData[psize];
   for (int i = 1; i <= psize; i++) {
     // box
     // data setting
-    data = (params *) malloc(sizeof(params));
-    data->row = boxRow;
-    data->col = boxCol;
-    data->psize = psize;
-    data->grid = grid;
+    boxData[i - 1] = (params *) malloc(sizeof(params));
+    boxData[i - 1]->row = boxRow;
+    boxData[i - 1]->col = boxCol;
+    boxData[i - 1]->psize = psize;
+    boxData[i - 1]->grid = grid;
     // thread creation
-    pthread_create(&ids[currId++], NULL, checkBox, (void *)data);
+    pthread_create(&ids[currId++], NULL, checkBox, (void *)boxData[i - 1]);
     if (boxCol == psize - (sqrt(psize) - 1)) {
       boxCol = 1;
       boxRow += sqrt(psize);
@@ -209,9 +208,13 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
     }
   }
   // joining all threads from validation
-  for (int i = 0; i < (psize + 2); i++) {
+  pthread_join(ids[0], NULL);
+  pthread_join(ids[1], NULL);
+  for (int i = 2; i < (psize + 2); i++) {
     pthread_join(ids[i], NULL);
+    free(boxData[i - 2]);
   }
+  free(data);
   // setting the results of the validation
   *valid = glbValid;
   *complete = glbComplete;
@@ -221,8 +224,6 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   bool canSolve;
   // array to store what values have been seen during solve checks
   bool *seen;
-  bool seenArr[psize + 1];
-  seen = seenArr;
   // if the puzzle hasn't been solved yet
   bool unSolved = true;
   while (unSolved) {
@@ -235,15 +236,19 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
     canSolve = false;
     // iterate through whole puzzle
     for (int i = 1; i <= psize; i++) {
+      // adjusting box row value if needed
+      if (i > sqrt(psize) && (i - 1)  % (int)sqrt(psize) == 0) {
+        boxRow += sqrt(psize);
+      }
       for (int j = 1; j <= psize; j++) {
-        // adjust current square pos if needed
-        if (j != 1 && (j - 1)  % (int)sqrt(psize) == 0) {
+        // adjust box column value if needed
+        if (j > sqrt(psize) && (j - 1) % (int)sqrt(psize) == 0) {
           boxCol += sqrt(psize);  
         }
         // if puzzle spot needs to be filled
         if (grid[i][j] == 0) {
           // clear seen array
-          memset(seen, 0, (psize + 1) * sizeof(bool));
+          seen = (bool *) calloc((psize + 1), sizeof(bool));
           // create threads to check for possible values to insert into puzzle spot
           // checking for possible values in the current row, col, and box of puzzle spot
           pthread_t rowId, colId, boxId;
@@ -262,6 +267,7 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
           pthread_join(colId, NULL);
           pthread_join(boxId, NULL);
           // searching through seen array for numbers that weren't found in same row, col, or box
+          bool canInsert = true;
           int num = -1;
           for (int k = 1; k <= psize; k++) {
             // havent seen the current number
@@ -272,22 +278,23 @@ void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
                 num = k;
               } else {
                 // another possible number has been found
-                unSolved = true;
-                continue;
+                canInsert = false;
+                break;
               }
             }
           }
+          free(seen);
+          free(data);
+          if (!canInsert) {
+            unSolved = true;
+            continue;
+          } 
           grid[i][j] = num;
           // because value was inserted into puzzle spot, assuming puzzle is solvable again
           canSolve = true;
-          free(data);
         }
       }
-      // adjusting box row value if needed
-      if (i != 1 && (i - 1)  % (int)sqrt(psize) == 0) {
-          boxRow += sqrt(psize);
-          boxCol = 1;
-      }
+      boxCol = 1;
     }
     if (!canSolve && unSolved) {
       // no value was inserted this iteration, but the puzzle isn't solved yet
